@@ -2,61 +2,134 @@ import { Elemental } from '../elemental.js';
 
 class ExampleElementalComponent extends Elemental {
     static template = /*html*/`
-        <h2><bind>title</bind></h2>
+        <h1><bind>title</bind></h1>
 
-        <for each="items" as="item">
-            <p><bind>item.text</bind></p>
-        </for>
+        <!-- Bind with expression (ternary) -->
+        <p><bind>todos.length === 0 ? 'No todos yet' : 'You have ' + todos.length + ' todo(s)'</bind></p>
 
-        <div>
-            <for each="nestedItems" as="nestedItem">
-                <p><bind>nestedItem.text</bind></p>
-                <div>
-                    <for each="nestedItem.subItems" as="subItem">
-                        <p><bind>subItem.text</bind></p>
-                    </for>
+        <!-- For loop with class binding and event handler -->
+        <div class="todos-list">
+            <for each="todos" as="todo">
+                <div 
+                    class="todo-item"
+                    data-class="{ 'todo-done': todo.done }"
+                    data-click="toggleTodo(todo.id)"
+                >
+                    <span><bind>todo.text</bind></span>
                 </div>
             </for>
         </div>
 
-
-        <if condition="items.length === 0">
-            <p>No items to display.</p>
+        <!-- If conditional rendering -->
+        <if condition="todos.length > 0">
+            <button type="button" data-click="clearCompleted()">Clear completed</button>
         </if>
 
-        <button type="button" id="addItemButton" data-click="handleAddItem()">Add item</button>
+        <!-- Event handler for adding -->
+        <button type="button" class="btn-add" data-click="addTodo()">
+            <bind>todos.length >= 5 ? 'Max todos reached' : 'Add todo'</bind>
+        </button>
     `;
 
     static defaultProps() {
         return {
-            title: this.getAttribute('title') || 'Default',
-            items: [
-                { id: 1, text: 'Item 1' },
-                { id: 2, text: 'Item 2' },
-                { id: 3, text: 'Item 3' },
-            ],
-            nestedItems: [
-                { id: 1, text: 'Nested Item 1', subItems: [{ id: 1, text: 'Sub Item 1' }, { id: 2, text: 'Sub Item 2' }] },
-                { id: 2, text: 'Nested Item 2', subItems: [{ id: 3, text: 'Sub Item 3' }] },
+            title: 'Todo App',
+            todos: [
+                { id: 1, text: 'Learn Elemental', done: false },
+                { id: 2, text: 'Build a component', done: true },
+                { id: 3, text: 'Deploy it', done: false },
             ],
         };
     }
 
-    handleAddItem() {
-        this.setState((prev) => {
-            const nextItemNumber = prev.items.length + 1;
-            console.log('Adding item', nextItemNumber);
-            return {
-                ...prev,
-                items: [...prev.items, { id: nextItemNumber, text: `Item ${nextItemNumber}` }],
-            };
-        });
+    toggleTodo(id) {
+        this.setState((prev) => ({
+            ...prev,
+            todos: prev.todos.map(t =>
+                t.id === id ? { ...t, done: !t.done } : t
+            ),
+        }));
     }
 
+    clearCompleted() {
+        this.setState((prev) => ({
+            ...prev,
+            todos: prev.todos.filter(t => !t.done),
+        }));
+    }
+
+    addTodo() {
+        if (this.props.todos.length < 5) {
+            this.setState((prev) => ({
+                ...prev,
+                todos: [
+                    ...prev.todos,
+                    { id: Date.now(), text: `Todo ${prev.todos.length + 1}`, done: false },
+                ],
+            }));
+        }
+    }
 
     static styles = /*css*/`
+        h1 {
+            color: #333;
+            margin-bottom: 1rem;
+        }
+
         p {
-            color: blue;
+            color: #666;
+            font-size: 0.95rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .todos-list {
+            list-style: none;
+            margin-bottom: 1.5rem;
+        }
+
+        .todo-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: #f5f5f5;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .todo-item:hover {
+            background: #eee;
+        }
+
+        .todo-item.todo-done {
+            opacity: 0.6;
+            text-decoration: line-through;
+            color: #999;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            margin-right: 0.5rem;
+            font-size: 0.95rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #f9f9f9;
+            border-color: #999;
+        }
+
+        .btn-add {
+            background: #4CAF50;
+            color: white;
+            border: none;
+        }
+
+        .btn-add:hover {
+            background: #45a049;
         }
     `;
 }

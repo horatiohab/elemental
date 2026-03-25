@@ -1,10 +1,17 @@
 # Elemental
 
-Elemental is a lightweight base class for building reactive [Web Components](https://developer.mozilla.org/en-US/docs/Web/API/Web_components). It gives you a declarative HTML template syntax, scoped styles, and simple prop-based state management. No build tools or dependencies required.
+Elemental is a lightweight base class for building reactive [Web Components](https://developer.mozilla.org/en-US/docs/Web/API/Web_components). 
 
----
+It gives you:
 
-## Getting Started
+- HTML templates
+- reactive state
+- scoped styles
+- simple event directives
+
+No build tools or extra packages are required.
+
+## Quick Start
 
 Import `Elemental` and extend it to create a component:
 
@@ -22,7 +29,7 @@ class MyCounter extends Elemental {
     }
 
     increment() {
-        this.setState(prev => ({ ...prev, count: prev.count + 1 }));
+        this.setState((prev) => ({ ...prev, count: prev.count + 1 }));
     }
 }
 
@@ -37,23 +44,29 @@ Then use it in HTML:
 <my-counter></my-counter>
 ```
 
----
+## Template Directives
 
-## Templates
+### bind
 
-Templates are plain HTML strings declared as `static template`. So far there are three built-in directives control rendering:
-
-### `<bind>`
-
-Outputs the value of a prop by name. Supports dot-notation for nested values.
+Use bind to print a value or expression.
 
 ```html
+<!-- Property access -->
 <p><bind>user.name</bind></p>
+
+<!-- Ternary expression -->
+<p><bind>isLoading ? 'Loading...' : 'Done'</bind></p>
+
+<!-- Boolean expressions -->
+<p><bind>items.length > 0 ? items.length + ' items' : 'No items'</bind></p>
+
+<!-- Arithmetic -->
+<p>Total: <bind>price * quantity</bind></p>
 ```
 
-### `<for>`
+### for
 
-Loops over an array prop and renders children for each item. Use `each` to name the array and `as` to name the loop variable. Loops can be nested.
+Use for to loop through an array.
 
 ```html
 <for each="items" as="item">
@@ -61,9 +74,9 @@ Loops over an array prop and renders children for each item. Use `each` to name 
 </for>
 ```
 
-### `<if>`
+### if
 
-Conditionally renders its children.
+Use if to render content only when a condition is true.
 
 ```html
 <if condition="items.length === 0">
@@ -71,11 +84,11 @@ Conditionally renders its children.
 </if>
 ```
 
----
+## State
 
-## Props & State
+State lives in props.
 
-Props are the component's reactive state. On first render, `defaultProps` is called to set the initial values. The return value can read HTML attributes via `this.getAttribute()`.
+Set initial state with defaultProps:
 
 ```js
 static defaultProps() {
@@ -86,7 +99,7 @@ static defaultProps() {
 }
 ```
 
-To update state, call `setState()` with either a new object or an updater function:
+Update state with setState:
 
 ```js
 // Updater function (receives current props)
@@ -96,29 +109,31 @@ this.setState(prev => ({ ...prev, count: prev.count + 1 }));
 this.setState({ count: 0 });
 ```
 
-Any change to props automatically re-renders the component.
-
----
-
 ## Events
 
-Attach event handlers to elements using `data-<event>="handlerName()"` attributes.
+Attach event handlers to elements using `data-<event>="handlerName(...)"` attributes.
 
 ```html
-<button type="button" data-click="handleClick()">Click me</button>
-<input data-input="handleInput()" />
-<form data-submit="handleSubmit()"></form>
+<button data-click="handleClick()">Click</button>
+<button data-click="selectItem(item.id)">Select</button>
+<button data-click="selectItem(event, item.id)">Select with event</button>
 ```
 
-```js
-handleClick() {
-    // called when the button is clicked
-}
+## Class Binding
+
+Use data-class to toggle classes from state.
+
+```html
+<button data-class="{ active: isSelected, disabled: isLoading }">
+    Save
+</button>
 ```
 
-> Note: for now, handlers currently receive no arguments. Access `this.props` directly inside the handler for current state.
+You can also use quoted class names:
 
----
+```html
+<div data-class="{ 'error-message': hasError }">Message</div>
+```
 
 ## Styles
 
@@ -135,4 +150,4 @@ static styles = css`
 
 ## Full Example
 
-See [components/example-elemental.component.js](components/example-elemental.component.js) and [index.html](index.html) for a working example with nested loops, conditional rendering, and event handling.
+See [components/example-elemental.component.js](components/example-elemental.component.js) and [index.html](index.html) for a working example.

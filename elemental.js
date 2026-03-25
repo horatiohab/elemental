@@ -1,12 +1,12 @@
 const SUPPORTED_EVENTS = ['click', 'change', 'input', 'submit'];
-const ZERO_ARG_HANDLER_PATTERN = /^([\w$]+)\(\)$/;
+const HANDLER_CALL_PATTERN = /^([\w$]+)\((.*)\)$/;
+const UNRESOLVED = Symbol('UNRESOLVED');
 
 export class Elemental extends HTMLElement {
     #props = {};
     #proxyCache = new WeakMap();
     #isRendering = false;
     #renderQueued = false;
-    #hasWarnedAboutRender = false;
 
     constructor({ template, styles, props } = {}) {
         super();
@@ -57,14 +57,19 @@ export class Elemental extends HTMLElement {
             const directiveTag = sourceNode.tagName?.toLowerCase();
 
             if (directiveTag === 'bind') {
-                outputFragment.append(document.createTextNode(this.#getValueAtPath(sourceNode.textContent, scope)));
+                const bindValue = this.#resolveBindValue(sourceNode.textContent, scope);
+                outputFragment.append(document.createTextNode(bindValue));
                 continue;
             }
 
             if (directiveTag === 'for') {
-                const items = this.#getValueAtPath(sourceNode.getAttribute('each'), scope);
+                const items = this.#resolvePath(sourceNode.getAttribute('each'), scope);
                 const as = sourceNode.getAttribute('as');
-                items?.forEach(item => {
+                if (!Array.isArray(items)) {
+                    continue;
+                }
+
+                items.forEach(item => {
                     const childScope = Object.create(scope);
                     childScope[as] = item;
                     outputFragment.append(this.#buildTemplate(Array.from(sourceNode.childNodes), childScope));
@@ -72,7 +77,7 @@ export class Elemental extends HTMLElement {
                 continue;
             }
 
-            if (directiveTag === 'if' && !this.#evaluateConditionExpression(sourceNode.getAttribute('condition'), scope)) {
+            if (directiveTag === 'if' && !this.#evaluateCondition(sourceNode.getAttribute('condition'), scope)) {
                 continue;
             }
 
@@ -81,7 +86,7 @@ export class Elemental extends HTMLElement {
                 renderedNode.append(this.#buildTemplate(Array.from(sourceNode.childNodes), scope));
             }
 
-            this.#attachDirectiveEvents(sourceNode, renderedNode);
+            this.#applyDirectives(sourceNode, renderedNode, scope);
 
             outputFragment.append(renderedNode);
         }
@@ -89,13 +94,80 @@ export class Elemental extends HTMLElement {
         return outputFragment;
     }
 
-    #attachDirectiveEvents(sourceNode, renderedNode) {
+    #applyDirectives(sourceNode, renderedNode, scope = this.props) {
+        if (sourceNode.nodeType !== Node.ELEMENT_NODE) {
+            return;
+        }
+
+        this.#applyEventDirectives(sourceNode, renderedNode, scope);
+        this.#applyClassDirective(sourceNode, renderedNode, scope);
+    }
+
+    #applyEventDirectives(sourceNode, renderedNode, scope) {
         for (const eventName of SUPPORTED_EVENTS) {
-            const handlerName = sourceNode.getAttribute(`data-${eventName}`)?.match(ZERO_ARG_HANDLER_PATTERN)?.[1];
-            const handler = this.#getEventHandlerByName(handlerName);
-            if (handler) {
-                renderedNode.addEventListener(eventName, () => handler.call(this));
+            const directive = sourceNode.getAttribute(`data-${eventName}`);
+            if (!directive) continue;
+
+            const match = directive.match(HANDLER_CALL_PATTERN);
+            if (!match) {
+                this.#warn('Invalid event directive format:', directive);
+                continue;
             }
+
+            const handlerName = match[1];
+            const rawArgs = match[2]?.trim();
+            const handler = this.#getEventHandlerByName(handlerName);
+            if (!handler) continue;
+
+            renderedNode.addEventListener(eventName, (event) => {
+                const args = rawArgs
+                    ? this.#evaluateExpression(`[${rawArgs}]`, scope, [], event)
+                    : [];
+
+                if (!Array.isArray(args)) {
+                    this.#warn('Invalid event directive arguments:', directive);
+                    return;
+                }
+
+                handler.call(this, ...args);
+            });
+        }
+    }
+
+    #applyClassDirective(sourceNode, renderedNode, scope) {
+        const classBinding = sourceNode.getAttribute('data-class');
+        if (!classBinding) return;
+
+        const classMap = this.#parseClassMap(classBinding, scope);
+        if (!classMap) {
+            this.#warn('Invalid data-class binding:', classBinding);
+            return;
+        }
+
+        for (const [className, condition] of Object.entries(classMap)) {
+            const shouldAdd = typeof condition === 'string'
+                ? this.#evaluateCondition(condition, scope)
+                : !!condition;
+            if (shouldAdd) {
+                renderedNode.classList.add(className);
+            }
+        }
+    }
+
+    #parseClassMap(binding, scope) {
+        const parsedJson = this.#safeParseJson(binding);
+        const candidate = parsedJson !== UNRESOLVED
+            ? parsedJson
+            : this.#evaluateExpression(binding, scope, null);
+
+        return this.#isPlainObject(candidate) ? candidate : null;
+    }
+
+    #safeParseJson(value) {
+        try {
+            return JSON.parse(value);
+        } catch {
+            return UNRESOLVED;
         }
     }
 
@@ -173,17 +245,38 @@ export class Elemental extends HTMLElement {
         return !!value && Object.getPrototypeOf(value) === Object.prototype;
     }
 
-    #getValueAtPath(path, scope = this.props) {
-        if (!path) return '';
-        return path.split('.').reduce((obj, key) => obj?.[key], scope) ?? '';
+    #resolveBindValue(expression, scope = this.props) {
+        const result = this.#evaluateExpression(expression, scope, UNRESOLVED);
+        if (result !== UNRESOLVED) {
+            return String(result ?? '');
+        }
+
+        const pathResult = this.#resolvePath(expression, scope);
+        return String(pathResult ?? '');
     }
 
-    #evaluateConditionExpression(condition, scope = this.props) {
+    #resolvePath(path, scope = this.props) {
+        if (!path) return '';
+        const keys = path.split('.').map((key) => key.trim()).filter(Boolean);
+        if (!keys.length) return '';
+        return keys.reduce((obj, key) => obj?.[key], scope) ?? '';
+    }
+
+    #evaluateCondition(condition, scope = this.props) {
+        return !!this.#evaluateExpression(condition, scope, false);
+    }
+
+    #evaluateExpression(expression, scope = this.props, fallback = undefined, event = undefined) {
         try {
-            return new Function('scope', `with (scope) { return ${condition}; }`)(scope);
+            return new Function('scope', 'event', `with (scope) { return (${expression}); }`)(scope, event);
         } catch {
-            return false;
+            return fallback;
         }
+    }
+
+    #warn(...args) {
+        if (!this.#isDevelopment()) return;
+        console.warn(...args);
     }
 
     #renderNow() {
@@ -200,10 +293,6 @@ export class Elemental extends HTMLElement {
     }
 
     render() {
-        if (this.#isDevelopment() && !this.#hasWarnedAboutRender) {
-            this.#hasWarnedAboutRender = true;
-            console.warn('Elemental.render() is for internal compatibility. Prefer setState(...) or requestUpdate().');
-        }
-        this.requestUpdate();
+        this.#requestRender();
     }
 }
